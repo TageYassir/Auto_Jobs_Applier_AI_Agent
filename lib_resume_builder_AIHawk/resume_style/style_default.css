@@ -1,0 +1,48 @@
+/*Default$https://github.com/krishnavalliappan*/
+body {
+  font-family: Arial, sans-serif;
+  line-height: 1.45;
+  color: #222;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px;
+  background: #f7f7f8;
+}
+
+header {
+  background: #ffffff;
+  padding: 20px;
+  border-radius: 14px;
+  border: 1px solid #e7e7ea;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+}
+
+h1 {
+  margin: 0 0 6px 0;
+  font-size: 28pt;
+}
+
+h2 {
+  margin-top: 26px;
+  font-size: 15pt;
+  color: #0f172a;
+  border-bottom: 1px solid #d9d9df;
+  padding-bottom: 6px;
+}
+
+.entry {
+  background: #fff;
+  margin-top: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid #ececf1;
+}
+
+.entry h3 {
+  margin: 0 0 6px 0;
+  font-size: 12.5pt;
+}
+
+p {
+  margin: 6px 0;
+}

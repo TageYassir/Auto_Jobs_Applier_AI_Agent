@@ -1,57 +1,48 @@
 <a name="top"></a>
 <div align="center">
-<img src="./assets/AIHawk.png">
+This file is optional for Ollama-only usage. Never share or commit any manual answers you add here to version control.
 
-<!-- At first glance, the branding and messaging clearly conveys what to expect -->
-
-  <!-- [![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/AIhawkCommunity) -->
-
-# Auto_Jobs_Applier_AIHawk
-
-  ![CI](https://github.com/feder-cr/Auto_Jobs_Applier_AIHawk/actions/workflows/ci.yml/badge.svg)
-
-**🤖🔍 Your AI-powered job search assistant. Automate applications, get personalized recommendations, and land your dream job faster.**
-
+  - `manual_answers: {}`
+    - Optional map for known form questions when Ollama is unavailable
+    - Use it to prefill stable answers such as phone country, work authorization, or other recurring fields
 Join our community: [Telegram](https://t.me/AIhawkCommunity) (for Normal user) | [Discord](https://discord.gg/mMZcMTH9K6) (for Open Source contributors)
 
 [![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/AIhawkCommunity)
-[![Discord](https://img.shields.io/badge/Discord-7289DA?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/mMZcMTH9K6)
+  - Choose the model type, supported: ollama
 
-</div>
-
-**Creator** [feder-cr](https://github.com/feder-cr), Co-Founder of AIHawk </br>
-As AIHawk is focusing on their proprietary product - solving problems in hiring for companies, currently this project is led, managed, and maintained by a group of open-source contributors, with a focus on building tools to help job seekers land the jobs they deserve.
-
+  - Choose the local Ollama model, default: `gemma:latest`
 **Project Maintainers / Leads**: [surapuramakhil](https://github.com/surapuramakhil), [sarob](https://github.com/sarob), [cjbbb](https://github.com/cjbbb)
+  - Link of the local Ollama endpoint, default: <http://127.0.0.1:11434/>
+- `LLM_ENABLED`:
+  - Set to `true` to enable Ollama-backed AI features, or `false` to force manual/skip mode
+- `LLM_TIMEOUT_SECONDS`:
+  - Request timeout for Ollama calls
+- `LLM_MAX_RETRIES`:
+  - Number of retry attempts for transient Ollama failures
+- Note: To run local Ollama, follow the guidelines here: [Guide to Ollama deployment](https://github.com/ollama/ollama)
 
-We are looking to expand our FOSS maintainers team! If you are from a non-technical background, you can be part of the project management team, triaging issues, and shaping the project. If you are a technical person, you can join in doing code reviews, participating in releases, and buidling better version of this product.
-
-reach out to [surapuramakhil](https://github.com/surapuramakhil) on [Discord](https://discord.gg/mMZcMTH9K6). [Special thanks](#special-thanks) 
-
-Auto_Jobs_Applier_AIHawk is continuously evolving, and your feedback, suggestions, and contributions are highly valued. Feel free to open issues, suggest enhancements, or submit pull requests to help improve the project. Let's work together to make Auto_Jobs_Applier_AIHawk a powerful tool for job seekers worldwide.
-
+Recommended setup:
 ## Table of Contents
+```bash
+ollama pull gemma:latest
+ollama serve
+```
 
 1. [Introduction](#introduction)
-2. [Features](#features)
+#### 1. Ollama Unavailable
 3. [Installation](#installation)
+**Problem**: Ollama is stopped, unreachable, or the model is not pulled.
 4. [Configuration](#configuration)
+**Solution**:
 5. [Usage](#usage)
+- Run `ollama serve`
+- Pull the model with `ollama pull gemma:latest`
+- If AI features are still unavailable, the app will continue in manual/skip mode
+- If you want to use your own CV instead of generating one, pass `--resume <path-to-your-pdf>`
 6. [Documentation](#documentation)
-7. [Troubleshooting](#troubleshooting)
-8. [Conclusion](#conclusion)
-9. [Contributors](#contributors)
-10. [License](#license)
-11. [Disclaimer](#disclaimer)
-
-## Introduction
-
-Auto_Jobs_Applier_AIHawk is a cutting-edge, automated tool designed to revolutionize the job search and application process. In today's fiercely competitive job market, where opportunities can vanish in the blink of an eye, this program offers job seekers a significant advantage. By leveraging the power of automation and artificial intelligence, Auto_Jobs_Applier_AIHawk enables users to apply to a vast number of relevant positions efficiently and in a personalized manner, maximizing their chances of landing their dream job.
-
-### The Challenge of Modern Job Hunting
-
+## General Troubleshooting Tips
 In the digital age, the job search landscape has undergone a dramatic transformation. While online platforms have opened up a world of opportunities, they have also intensified competition. Job seekers often find themselves spending countless hours scrolling through listings, tailoring applications, and repetitively filling out forms. This process can be not only time-consuming but also emotionally draining, leading to job search fatigue and missed opportunities.
-
+ [Ollama Documentation](https://github.com/ollama/ollama)
 ### Enter Auto_Jobs_Applier_AIHawk: Your Personal Job Search Assistant
 
 Auto_Jobs_Applier_AIHawk steps in as a game-changing solution to these challenges. It's not just a tool; it's your tireless, 24/7 job search partner. By automating the most time-consuming aspects of the job search process, it allows you to focus on what truly matters - preparing for interviews and developing your professional skills.

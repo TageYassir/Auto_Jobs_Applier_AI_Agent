@@ -12,6 +12,7 @@ from lib_resume_builder_AIHawk import Resume, FacadeManager, ResumeGenerator, St
 from typing import Optional
 from constants import PLAIN_TEXT_RESUME_YAML, SECRETS_YAML, WORK_PREFERENCES_YAML
 from src.utils.chrome_utils import chrome_browser_options
+from src.ai_hawk.llm.provider import is_llm_available
 
 from src.job_application_profile import JobApplicationProfile
 from src.logging import logger
@@ -22,10 +23,10 @@ original_stderr = sys.stderr
 # Add the src directory to the Python path
 sys.path.append(str(Path(__file__).resolve().parent / 'src'))
 
-from ai_hawk.authenticator import get_authenticator
-from ai_hawk.bot_facade import AIHawkBotFacade
-from ai_hawk.job_manager import AIHawkJobManager
-from ai_hawk.llm.llm_manager import GPTAnswerer
+from src.ai_hawk.authenticator import get_authenticator
+from src.ai_hawk.bot_facade import AIHawkBotFacade
+from src.ai_hawk.job_manager import AIHawkJobManager
+from src.ai_hawk.llm.llm_manager import GPTAnswerer
 
 
 class ConfigError(Exception):
@@ -113,17 +114,13 @@ class ConfigValidator:
         return parameters
 
     @staticmethod
-    def validate_secrets(secrets_yaml_path: Path) -> str:
+    def validate_secrets(secrets_yaml_path: Path) -> dict:
         secrets = ConfigValidator.validate_yaml_file(secrets_yaml_path)
-        mandatory_secrets = ['llm_api_key']
-
-        for secret in mandatory_secrets:
-            if secret not in secrets:
-                raise ConfigError(f"Missing secret '{secret}' in file {secrets_yaml_path}")
-
-        if not secrets['llm_api_key']:
-            raise ConfigError(f"llm_api_key cannot be empty in secrets file {secrets_yaml_path}.")
-        return secrets['llm_api_key']
+        if secrets is None:
+            secrets = {}
+        if not isinstance(secrets, dict):
+            raise ConfigError(f"Secrets file must contain a YAML mapping in {secrets_yaml_path}")
+        return secrets
 
 class FileManager:
     @staticmethod
@@ -142,9 +139,9 @@ class FileManager:
         return (app_data_folder / SECRETS_YAML, app_data_folder / WORK_PREFERENCES_YAML, app_data_folder / PLAIN_TEXT_RESUME_YAML, output_folder)
 
     @staticmethod
-    def file_paths_to_dict(resume_file: Path | None, plain_text_resume_file: Path) -> dict:
-        if not plain_text_resume_file.exists():
-            raise FileNotFoundError(f"Plain text resume file not found: {plain_text_resume_file}")
+    def file_paths_to_dict(resume_file: Optional[Path], plain_text_resume_file: Optional[Path]) -> dict:
+        if not plain_text_resume_file or not plain_text_resume_file.exists():
+            raise FileNotFoundError("Plain text resume file is required and must be provided via CLI argument. CLI argument.")
 
         result = {'plainTextResume': plain_text_resume_file}
 
@@ -163,25 +160,63 @@ def init_browser() -> webdriver.Chrome:
     except Exception as e:
         raise RuntimeError(f"Failed to initialize browser: {str(e)}")
 
-def create_and_run_bot(parameters, llm_api_key):
+def create_and_run_bot(parameters):
     try:
         style_manager = StyleManager()
         resume_generator = ResumeGenerator()
         with open(parameters['uploads']['plainTextResume'], "r", encoding='utf-8') as file:
             plain_text_resume = file.read()
         resume_object = Resume(plain_text_resume)
-        resume_generator_manager = FacadeManager(llm_api_key, style_manager, resume_generator, resume_object, Path("data_folder/output"))
+        resume_generator_manager = FacadeManager(None, style_manager, resume_generator, resume_object, Path("data_folder/output"))
         
-        # Run the resume generator manager's functions if resume is not provided
+        # If the user didn't provide --resume, ask them to choose a style OR upload a CV
         if 'resume' not in parameters['uploads']:
-            resume_generator_manager.choose_style()
+            # Show the same menu options but add an "Upload" choice
+            print("\nWhich style would you like to adopt?")
+            print("1. Clean Blue (style author -> https://github.com/samodum)")
+            print("2. Default (style author -> https://github.com/krishnavalliappan)")
+            print("3. Modern Blue (style author -> https://github.com/josylad)")
+            print("4. Create your resume style in CSS")
+            print("5. Upload your own CV (PDF)")
+            choice = input("Enter your choice (1-5): ").strip()
+            if choice == "5":
+                # Prompt for a PDF path
+                while True:
+                    user_path = input("Enter the full path to your CV PDF file: ").strip()
+                    if not user_path:
+                        print("No path entered. Please try again.")
+                        continue
+                    resume_path = Path(user_path)
+                    if not resume_path.exists():
+                        print(f"File not found: {resume_path}")
+                        continue
+                    if resume_path.suffix.lower() != ".pdf":
+                        print("Only PDF files are accepted.")
+                        continue
+                    # Valid file – store it in parameters and skip generation
+                    parameters['uploads']['resume'] = resume_path
+                    print("Your CV will be uploaded instead of generating a new one.\n")
+                    break
+            else:
+                # Let the original style manager handle the choice (1-4)
+                # We can pass the choice number if the FacadeManager supports it,
+                # otherwise call the original choose_style() which will prompt again.
+                # If FacadeManager.choose_style() doesn't accept a direct choice,
+                # we can call it directly (it will re-ask the same menu).
+                resume_generator_manager.choose_style()   # This will show the same 1-4 menu
         
         job_application_profile_object = JobApplicationProfile(plain_text_resume)
+
+        if not is_llm_available():
+            logger.warning(
+                "LLM unavailable (Ollama). AI features will fall back to manual/skip mode. "
+                "If you want to upload your own CV instead of generating one, use the --resume option."
+            )
         
         browser = init_browser()
         login_component = get_authenticator(driver=browser, platform='linkedin')
         apply_component = AIHawkJobManager(browser)
-        gpt_answerer_component = GPTAnswerer(parameters, llm_api_key)
+        gpt_answerer_component = GPTAnswerer(parameters)
         bot = AIHawkBotFacade(login_component, apply_component)
         bot.set_job_application_profile_and_resume(job_application_profile_object, resume_object)
         bot.set_gpt_answerer_and_resume_generator(gpt_answerer_component, resume_generator_manager)
@@ -208,13 +243,14 @@ def main(collect: bool = False, resume: Optional[Path] = None):
         secrets_file, config_file, plain_text_resume_file, output_folder = FileManager.validate_data_folder(data_folder)
         
         parameters = ConfigValidator.validate_config(config_file)
-        llm_api_key = ConfigValidator.validate_secrets(secrets_file)
+        secrets = ConfigValidator.validate_secrets(secrets_file)
         
         parameters['uploads'] = FileManager.file_paths_to_dict(resume, plain_text_resume_file)
         parameters['outputFileDirectory'] = output_folder
         parameters['collectMode'] = collect
+        parameters['manual_answers'] = secrets.get('manual_answers', {}) or {}
         
-        create_and_run_bot(parameters, llm_api_key)
+        create_and_run_bot(parameters)
     except ConfigError as ce:
         logger.error(f"Configuration error: {str(ce)}")
         logger.error(f"Refer to the configuration guide for troubleshooting: https://github.com/feder-cr/Auto_Jobs_Applier_AIHawk?tab=readme-ov-file#configuration {str(ce)}")

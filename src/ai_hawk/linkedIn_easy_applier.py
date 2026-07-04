@@ -439,8 +439,23 @@ class AIHawkEasyApplier:
             logger.debug(f"Selected option: {existing_answer}")
             self.job_application.save_application_data({'type': 'dropdown', 'question': question_text, 'answer': existing_answer})
         else:
-            logger.error(f"Answer '{existing_answer}' is not a valid option in the dropdown")
-            raise Exception(f"Invalid option selected: {existing_answer}")
+            fallback_option = next(
+                (
+                    option for option in options
+                    if option and "select" not in option.lower() and "choose" not in option.lower() and "none" not in option.lower()
+                ),
+                None,
+            )
+            if fallback_option:
+                logger.warning(
+                    f"LLM unavailable or returned an invalid dropdown answer for '{question_text}'. "
+                    f"Using fallback option '{fallback_option}' and marking manual action may be required."
+                )
+                select.select_by_visible_text(fallback_option)
+                self.job_application.save_application_data({'type': 'dropdown', 'question': question_text, 'answer': fallback_option})
+            else:
+                logger.warning(f"No valid fallback option found for dropdown question '{question_text}'. Manual action required.")
+                return False
 
     def _is_upload_field(self, element: WebElement) -> bool:
         is_upload = bool(element.find_elements(By.XPATH, ".//input[@type='file']"))
@@ -477,6 +492,14 @@ class AIHawkEasyApplier:
             elif 'cover' in output:
                 logger.debug("Uploading cover letter")
                 self._create_and_upload_cover_letter(element, job_context)
+            else:
+                logger.warning("LLM unavailable for upload field classification. Defaulting to resume upload path.")
+                if self.resume_path is not None and self.resume_path.resolve().is_file():
+                    element.send_keys(str(self.resume_path.resolve()))
+                    job_context.job.resume_path = str(self.resume_path.resolve())
+                    job_context.job_application.resume_path = str(self.resume_path.resolve())
+                else:
+                    self._create_and_upload_resume(element, job_context)
 
         logger.debug("Finished handling upload fields")
 
@@ -502,6 +525,21 @@ class AIHawkEasyApplier:
 
                 logger.debug(f"Generating resume for job: {job.title} at {job.company}")
                 resume_pdf_base64 = self.resume_generator_manager.pdf_base64(job_description_text=job.description)
+                if not resume_pdf_base64:
+                    if self.resume_path is not None and self.resume_path.resolve().is_file():
+                        logger.warning(
+                            "LLM unavailable (Ollama). Falling back to the user's uploaded CV. "
+                            "If you want the app to continue without AI tailoring, use --resume with your own PDF."
+                        )
+                        element.send_keys(str(self.resume_path.resolve()))
+                        job.resume_path = str(self.resume_path.resolve())
+                        job_application.resume_path = str(self.resume_path.resolve())
+                        return
+                    logger.warning(
+                        "LLM unavailable (Ollama) and no uploaded CV was provided. "
+                        "Manual action required: upload your own CV with the --resume option."
+                    )
+                    return
                 with open(file_path_pdf, "xb") as f:
                     f.write(base64.b64decode(resume_pdf_base64))
                 logger.debug(f"Resume successfully generated and saved to: {file_path_pdf}")
@@ -569,6 +607,12 @@ class AIHawkEasyApplier:
         logger.debug("Starting the process of creating and uploading cover letter.")
 
         cover_letter_text = self.gpt_answerer.answer_question_textual_wide_range("Write a cover letter")
+        if not cover_letter_text or cover_letter_text == "MANUAL_REQUIRED":
+            logger.warning(
+                "LLM unavailable (Ollama). Skipping cover letter generation. "
+                "If the application requires one, upload your own CV/cover letter manually."
+            )
+            return
 
         folder_path = 'generated_cv'
 
@@ -715,13 +759,28 @@ class AIHawkEasyApplier:
 
                     break
 
-            if existing_answer:
-                self._select_radio(radios, existing_answer['answer'])
-                job_application.save_application_data(existing_answer)
-                logger.debug("Selected existing radio answer")
-                return True
+                if existing_answer:
+                    self._select_radio(radios, existing_answer['answer'])
+                    job_application.save_application_data(existing_answer)
+                    logger.debug("Selected existing radio answer")
+                    return True
 
             answer = self.gpt_answerer.answer_question_from_options(question_text, options)
+            if not answer or answer == "MANUAL_REQUIRED" or answer not in options:
+                fallback_option = next(
+                    (
+                        option for option in options
+                        if option and "select" not in option.lower() and "choose" not in option.lower() and "none" not in option.lower()
+                    ),
+                    None,
+                )
+                if not fallback_option:
+                    logger.warning(f"Manual action required for radio question '{question_text}'. Skipping field.")
+                    return False
+                logger.warning(
+                    f"LLM unavailable or returned an invalid radio answer for '{question_text}'. Using fallback option '{fallback_option}'."
+                )
+                answer = fallback_option
             self._save_questions_to_json({'type': 'radio', 'question': question_text, 'answer': answer})
             self.all_data = self._load_questions_from_json()
             job_application.save_application_data({'type': 'radio', 'question': question_text, 'answer': answer})
@@ -768,6 +827,10 @@ class AIHawkEasyApplier:
                     answer = self.gpt_answerer.answer_question_textual_wide_range(question_text)
                     logger.debug(f"Generated textual answer: {answer}")
 
+            if not answer or answer == "MANUAL_REQUIRED":
+                logger.warning(f"Manual action required for textbox question '{question_text}'. Skipping field.")
+                return False
+
             self._enter_text(text_field, answer)
             logger.debug("Entered answer into the textbox.")
 
@@ -795,7 +858,7 @@ class AIHawkEasyApplier:
             date_field = date_fields[0]
             question_text = section.text.lower()
             answer_date = self.gpt_answerer.answer_question_date()
-            answer_text = answer_date.strftime("%Y-%m-%d")
+            answer_text = answer_date.strftime("%Y-%m-%d") if hasattr(answer_date, 'strftime') else str(answer_date)
 
             existing_answer = None
             current_question_sanitized = self._sanitize_text(question_text) 
@@ -856,6 +919,21 @@ class AIHawkEasyApplier:
                 else:
                     logger.debug(f"No existing answer found, querying model for: {question_text}")
                     answer = self.gpt_answerer.answer_question_from_options(question_text, options)
+                    if not answer or answer == "MANUAL_REQUIRED" or answer not in options:
+                        fallback_option = next(
+                            (
+                                option for option in options
+                                if option and "select" not in option.lower() and "choose" not in option.lower() and "none" not in option.lower()
+                            ),
+                            None,
+                        )
+                        if not fallback_option:
+                            logger.warning(f"Manual action required for dropdown question '{question_text}'. Skipping field.")
+                            return False
+                        logger.warning(
+                            f"LLM unavailable or returned an invalid dropdown answer for '{question_text}'. Using fallback option '{fallback_option}'."
+                        )
+                        answer = fallback_option
                     self._save_questions_to_json({'type': 'dropdown', 'question': question_text, 'answer': answer})
                     self.all_data = self._load_questions_from_json()
                     job_application.save_application_data({'type': 'dropdown', 'question': question_text, 'answer': answer})
