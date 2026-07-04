@@ -1028,4 +1028,11 @@ class AIHawkEasyApplier:
 
     def answer_contians_company_name(self,answer:Any)->bool:
         return isinstance(answer,str) and not self.current_job.company is None and self.current_job.company in answer
+    
+    # In AIHawkJobManager
+    def set_db_logger(self, log_func):
+        self.log_func = log_func
 
+    def _log(self, job, status, reason=None):
+        if hasattr(self, 'log_func') and self.log_func:
+            self.log_func(self.run_id, job, status, reason)
